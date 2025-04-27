@@ -1,5 +1,5 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 os.environ['XLA_PYTHON_MEM_FRACTION'] = '0.7'
 
 import jax
@@ -250,11 +250,13 @@ config = {
     "SEED": 42,
     "LR": 3e-4,
     "NUM_ENVS": 1,
-    "NUM_ACTORS": 3,
+    "NUM_ACTORS": 1,
     "FC_DIM_SIZE": 128,
     "GRU_HIDDEN_DIM": 128,
     "UPDATE_EPOCHS": 16,
     "NUM_MINIBATCHES": 5,
+    "NUM_STEPS": 2000,
+    "TOTAL_TIMESTEPS": 10000,
     "GAMMA": 0.99,
     "GAE_LAMBDA": 0.95,
     "CLIP_EPS": 0.2,
@@ -263,7 +265,7 @@ config = {
     "MAX_GRAD_NORM": 2,
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
-    "LOADDIR": "/home/dqy/NeuralPlanex/AeroPlanex_v/AeroPlanax/envs/models/heading baseline"
+    "LOADDIR": "/home/lczh/formation/formation/results/2025-04-27-17-43/checkpoints/checkpoint_epoch_500"
 }
 if "NUM_UPDATES" not in config:
     config["NUM_UPDATES"] = (

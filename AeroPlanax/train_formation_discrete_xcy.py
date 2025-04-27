@@ -1,6 +1,6 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-os.environ['XLA_PYTHON_MEM_FRACTION'] = '0.95'
+os.environ['XLA_PYTHON_MEM_FRACTION'] = '0.9'
 
 import jax
 import wandb
@@ -457,36 +457,97 @@ def make_train(config):
             rng = update_state[-1]
             metric["update_steps"] = update_steps
             if config.get("DEBUG"):
+                # def callback(metric):
+                #     env_steps = metric["update_steps"] * config["NUM_ENVS"] * config["NUM_STEPS"]
+
+                #     # 1) 首先将 returned_episode 和其他 metric 都 flatten 成 1D
+                #     returned_episode = metric["returned_episode"].ravel()                # 布尔数组
+                #     returned_episode_returns = metric["returned_episode_returns"].ravel()  # shape (N,)
+                #     returned_episode_lengths = metric["returned_episode_lengths"].ravel()  # shape (N,)
+                #     heading_turn_counts = metric["heading_turn_counts"].ravel()           # shape (N,)
+                #     target_heading = metric["target_heading"].ravel()                     # shape (N,)
+                #     num_crashed = metric["num_crashed"].ravel()                           # shape (N,)
+
+                #     # 2) 用 returned_episode 这个一维布尔 mask 进行索引
+                #     # 注意：当 returned_episode 中为 True 的元素才会被选出
+                #     episode_return_mean = returned_episode_returns[returned_episode].mean()
+                #     episode_length_mean = returned_episode_lengths[returned_episode].mean()
+                #     success_times_mean = heading_turn_counts[returned_episode].mean()
+                #     target_heading_mean = jnp.abs(target_heading[returned_episode]).mean()
+                #     num_crashed_mean = num_crashed[returned_episode].mean()
+
+                #     for k, v in metric["loss"].items():
+                #         writer.add_scalar('loss/{}'.format(k), v, env_steps)
+
+                #     # 3) 写入 TensorBoard / WandB
+                #     writer.add_scalar('eval/episodic_return', episode_return_mean, env_steps)
+                #     writer.add_scalar('eval/episodic_length', episode_length_mean, env_steps)
+                #     writer.add_scalar('eval/success_times', success_times_mean, env_steps)
+                #     writer.add_scalar('eval/target_heading_mean', target_heading_mean, env_steps)
+                #     writer.add_scalar('eval/num_crashed', num_crashed_mean, env_steps)
+
+                #     # 4) 打印调试信息
+                #     print("EnvStep={:<10} EpisodeLength={:<4.2f} Return={:<4.2f} SuccessTimes={:.3f} TargetHeading_mean={:.3f} Num_crashed={:.3f}".format(
+                #         env_steps,
+                #         episode_length_mean,
+                #         episode_return_mean,
+                #         success_times_mean,
+                #         target_heading_mean,
+                #         num_crashed_mean
+                #     ))
+                    
+######################################################################################################################################################################################################################################################################################################
                 def callback(metric):
                     env_steps = metric["update_steps"] * config["NUM_ENVS"] * config["NUM_STEPS"]
                     for k, v in metric["loss"].items():
                         writer.add_scalar('loss/{}'.format(k), v, env_steps)
-                    
+                        # 获取有效的返回 episodes
+                    # returned_episode = metric["returned_episode"]
+                    # # 先确保数据维度正确匹配再进行索引
+                    # ep_returns = metric["returned_episode_returns"][returned_episode]
+                    # ep_lengths = metric["returned_episode_lengths"][returned_episode]
+                    # writer.add_scalar('eval/episodic_return', metric["returned_episode_returns"][metric["returned_episode"]].mean(), env_steps)
+                    # writer.add_scalar('eval/episodic_length', metric["returned_episode_lengths"][metric["returned_episode"]].mean(), env_steps)
+                    # # writer.add_scalar('eval/success_times', metric["heading_turn_counts"][metric["returned_episode"].squeeze()].mean(), env_steps)
+                    # # 使用简单的均值来避免索引问题
+                    # writer.add_scalar('eval/success_times', metric["heading_turn_counts"].mean(), env_steps)
+                    #
+                    # writer.add_scalar('eval/target_heading_mean', jnp.abs(metric["target_heading"][metric["returned_episode"].squeeze()]).mean(), env_steps)
+                    # writer.add_scalar('eval/num_crashed', metric["num_crashes"][metric["returned_episode"].squeeze()].mean(), env_steps)
+                    # print("EnvStep={:<10} EpisodeLength={:<4.2f} Return={:<4.2f} SuccessTimes={:.3f} TargetHeading_mean={:.3f} Num_crashed={:<10}".format(
+                    #     metric["update_steps"] * config["NUM_ENVS"] * config["NUM_STEPS"],
+                    #     metric["returned_episode_lengths"][metric["returned_episode"]].mean(),
+                    #     metric["returned_episode_returns"][metric["returned_episode"]].mean(),
+                    #     metric["heading_turn_counts"][metric["returned_episode"].squeeze()].mean(),
+                    #     jnp.abs(metric["target_heading"][metric["returned_episode"].squeeze()]).mean(),
+                    #     metric["num_crashes"][metric["returned_episode"].squeeze()].mean(),
+                    # ))
                     # 获取有效的返回 episodes
                     returned_episode = metric["returned_episode"]
                     # 先确保数据维度正确匹配再进行索引
                     ep_returns = metric["returned_episode_returns"][returned_episode]
                     ep_lengths = metric["returned_episode_lengths"][returned_episode]
-                    
+
                     writer.add_scalar('eval/episodic_return', ep_returns.mean(), env_steps)
                     writer.add_scalar('eval/episodic_length', ep_lengths.mean(), env_steps)
-                    
+
                     # 使用适当的索引方式，避免维度不匹配
                     # 打印数据形状以便调试
                     print(f"returned_episode shape: {metric['returned_episode'].shape}")
                     print(f"heading_turn_counts shape: {metric['heading_turn_counts'].shape}")
-                    
+
                     # 使用简单的均值来避免索引问题
                     writer.add_scalar('eval/success_times', metric["heading_turn_counts"].mean(), env_steps)
-                    writer.add_scalar('eval/target_heading_mean', jnp.abs(metric["target_heading"]).mean(), env_steps)
+                    writer.add_scalar('eval/target_heading_mean', jnp.abs(metric["target_heading"]).mean(),
+                                      env_steps)
                     writer.add_scalar('eval/num_crashed', metric["num_crashes"].mean(), env_steps)
-                    
+
                     print("EnvStep={:<10} EpisodeLength={:<4.2f} Return={:<4.2f}".format(
                         env_steps,
                         ep_lengths.mean(),
                         ep_returns.mean()
                     ))
-
+######################################################################################################################################################################################################################################################################################################
                 jax.experimental.io_callback(callback, None, metric)
             update_steps = update_steps + 1    
             runner_state = (train_state, env_state, last_obs, last_done, hstate, rng)
@@ -514,10 +575,10 @@ config = {
     "GROUP": "FormationTask(based on heading + course learning single agent policy)",
     "SEED": 42,
     "LR": 3e-4,
-    "NUM_ENVS": 200,
+    "NUM_ENVS": 100,
     "NUM_ACTORS": 1,
-    "NUM_STEPS": 1000,
-    "TOTAL_TIMESTEPS": 1e8,
+    "NUM_STEPS": 2000,
+    "TOTAL_TIMESTEPS": 5e7,
     "FC_DIM_SIZE": 128,
     "GRU_HIDDEN_DIM": 128,
     "UPDATE_EPOCHS": 16,

@@ -21,7 +21,6 @@ from envs.aeroplanax_heading import AeroPlanaxHeadingEnv, HeadingTaskParams
 # from envs.aeroplanax_combat_with_missile import AeroPlanaxCombatwithMissileEnv, CombatwithMissileTaskParams
 import orbax.checkpoint as ocp
 
-
 class ScannedRNN(nn.Module):
     @functools.partial(
         nn.scan,
@@ -262,7 +261,7 @@ config = {
     "MAX_GRAD_NORM": 2,
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
-    "LOADDIR": "/home/dqy/NeuralPlanex/AeroPlanex_v/AeroPlanax/results/2025-04-06-14-42/checkpoints/checkpoint_epoch_1111" 
+    "LOADDIR": "/home/lczh/formation/formation/results/2025-04-26-17-09/checkpoints/checkpoint_epoch_500" 
 }
 rng = jax.random.PRNGKey(42)
 out = test(config, rng)
