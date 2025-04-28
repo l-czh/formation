@@ -101,7 +101,8 @@ class AeroPlanaxFormationEnv(AeroPlanaxEnv[FormationTaskState, FormationTaskPara
         ]
 
         # 课程学习：
-        self.increment_size = jnp.array([0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6, 2.8, 3.0])
+        # self.increment_size = jnp.array([0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6, 2.8, 3.0])
+        self.increment_size = jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         # 前5个元素是 [0.2, 0.4, 0.6, 0.8, 1.0]
         # 后10个元素是 [1.0] 重复10次
         # 该数组用于控制航向/高度/速度变化量的增量系数
@@ -162,6 +163,7 @@ class AeroPlanaxFormationEnv(AeroPlanaxEnv[FormationTaskState, FormationTaskPara
 
     @functools.partial(jax.jit, static_argnums=(0,))
     def _step_task(self, key, state, info, action, params):
+        # 根据速度更新编队位置
         delta_time = 1.0 / params.sim_freq * params.agent_interaction_steps # 1 / 仿真频率 * 智能体交互步数 = 1 / 控制频率 =  1 /50 * 10 = 0.002 （控制时间）
         delta_distance = jnp.mean(state.plane_state.vt) * delta_time
         state = state.replace(
@@ -169,7 +171,7 @@ class AeroPlanaxFormationEnv(AeroPlanaxEnv[FormationTaskState, FormationTaskPara
         )
 
         ############### aeroplanax_heading.py 任务 ############################
-
+        # 生成新的航向目标
         delta = self.increment_size[state.heading_turn_counts] # 渐进式增量系数
         key_heading, key_altitude_increment, key_vt_increment = jax.random.split(key, 3)
         delta = self.increment_size[state.heading_turn_counts] # 渐进式增量系数
@@ -179,13 +181,14 @@ class AeroPlanaxFormationEnv(AeroPlanaxEnv[FormationTaskState, FormationTaskPara
         # delta_altitude = jax.random.uniform(key_altitude_increment, shape=(self.num_agents,), minval=-params.max_altitude_increment, maxval=params.max_altitude_increment)
         # # 速度变化量(±100m/s)
         # delta_vt = jax.random.uniform(key_vt_increment, shape=(self.num_agents,), minval=-params.max_velocities_u_increment, maxval=params.max_velocities_u_increment)
-
+        
+        # 保持当前高度和速度目标
         target_altitude = state.target_altitude
         target_heading = wrap_PI(state.plane_state.yaw + delta_heading * delta)
         target_vt = state.target_vt
 
         ############### aeroplanax_heading.py 任务 ############################
-
+        # 更新状态
         new_state = state.replace(
             plane_state=state.plane_state.replace(
                 status=jnp.where(state.plane_state.is_success, 0, state.plane_state.status)

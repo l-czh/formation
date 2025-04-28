@@ -19,9 +19,8 @@ import distrax
 import tensorboardX
 import jax.experimental
 from envs.wrappers import LogWrapper
-from envs.aeroplanax_combat_with_missile import AeroPlanaxCombatwithMissileEnv, CombatwithMissileTaskParams
+from envs.aeroplanax_hierarchical_combat import AeroPlanaxHierarchicalCombatEnv, CombatTaskParams
 import orbax.checkpoint as ocp
-
 
 class ScannedRNN(nn.Module):
     @functools.partial(
@@ -46,12 +45,10 @@ class ScannedRNN(nn.Module):
 
     @staticmethod
     def initialize_carry(batch_size, hidden_size):
-        # Use a dummy key since the default state init fn is just zeros.
         cell = nn.GRUCell(features=hidden_size)
         return cell.initialize_carry(jax.random.PRNGKey(0), (batch_size, hidden_size))
 
-
-class ActorCriticRNN(nn.Module):
+class HighLevelController(nn.Module):
     action_dim: Sequence[int]
     config: Dict
 
@@ -87,9 +84,7 @@ class ActorCriticRNN(nn.Module):
         critic = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0))(
             critic
         )
-
         return hidden, pi, jnp.squeeze(critic, axis=-1)
-
 
 class Transition(NamedTuple):
     done: jnp.ndarray
@@ -100,20 +95,17 @@ class Transition(NamedTuple):
     obs: jnp.ndarray
     info: jnp.ndarray
 
-
 def batchify(x: dict, agent_list, num_envs, num_actors):
     x = jnp.stack([x[a] for a in agent_list])
-    # print('batchify', x.shape)
     return x.reshape((num_actors * num_envs, -1))
-
 
 def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
     x = x.reshape((num_actors, num_envs, -1))
     return {a: x[i] for i, a in enumerate(agent_list)}
 
 def make_train(config):
-    env_params = CombatwithMissileTaskParams()
-    env = AeroPlanaxCombatwithMissileEnv(env_params)
+    env_params = CombatTaskParams()
+    env = AeroPlanaxHierarchicalCombatEnv(env_params)
     env = LogWrapper(env)
     config["NUM_ACTORS"] = env.num_agents
     config["NUM_UPDATES"] = (
@@ -122,37 +114,6 @@ def make_train(config):
     config["MINIBATCH_SIZE"] = (
         config["NUM_ACTORS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
     )
-    if "LOADDIR" in config:
-        network = ActorCriticRNN(env.action_space(env.agents[0], env_params).shape[0], config=config)
-        rng = jax.random.PRNGKey(42)
-        init_x = (
-            jnp.zeros(
-                (1, config["NUM_ENVS"] * config["NUM_ACTORS"], *env.observation_space(env.agents[0], env_params).shape)
-            ),
-            jnp.zeros((1, config["NUM_ENVS"] * config["NUM_ACTORS"])),
-        )
-        init_hstate = ScannedRNN.initialize_carry(config["NUM_ACTORS"] * config["NUM_ENVS"], config["GRU_HIDDEN_DIM"])
-        network_params = network.init(rng, init_hstate, init_x)
-        if config["ANNEAL_LR"]:
-            tx = optax.chain(
-                optax.clip_by_global_norm(config["MAX_GRAD_NORM"]),
-                optax.adam(learning_rate=linear_schedule, eps=1e-5),
-            )
-        else:
-            tx = optax.chain(
-                optax.clip_by_global_norm(config["MAX_GRAD_NORM"]),
-                optax.adam(config["LR"], eps=1e-5),
-            )
-        train_state = TrainState.create(
-            apply_fn=network.apply,
-            params=network_params,
-            tx=tx,
-        )
-        state = {"params": train_state.params, "opt_state": train_state.opt_state, "epoch": jnp.array(0)}
-        ckptr = ocp.AsyncCheckpointer(ocp.StandardCheckpointHandler())
-        checkpoint = ckptr.restore(config['LOADDIR'], args=ocp.args.StandardRestore(item=state))
-    else:
-        checkpoint = None
 
     def linear_schedule(count):
         frac = (
@@ -164,7 +125,7 @@ def make_train(config):
 
     def train(rng):
         # INIT NETWORK
-        network = ActorCriticRNN(env.action_space(env.agents[0], env_params).shape[0], config=config)
+        network = HighLevelController(3, config=config)  # 3个输出：目标航向、高度、速度
         rng, _rng = jax.random.split(rng)
         init_x = (
             jnp.zeros(
@@ -189,13 +150,7 @@ def make_train(config):
             params=network_params,
             tx=tx,
         )
-        if checkpoint is not None:
-            params = checkpoint["params"]
-            opt_state = checkpoint["opt_state"]
-            train_state = train_state.replace(params=params, opt_state=opt_state)
-            start_epoch = checkpoint["epoch"]
-        else:
-            start_epoch = 0
+
         # INIT ENV
         rng, _rng = jax.random.split(rng)
         reset_rng = jax.random.split(_rng, config["NUM_ENVS"])
@@ -249,12 +204,6 @@ def make_train(config):
             runner_state, traj_batch = jax.lax.scan(
                 _env_step, runner_state, None, config["NUM_STEPS"]
             )
-            # jax.debug.print('detect nan: {}', jnp.any(jnp.isnan(traj_batch.done)))
-            # jax.debug.print('detect nan: {}', jnp.any(jnp.isnan(traj_batch.action)))
-            # jax.debug.print('detect nan: {}', jnp.any(jnp.isnan(traj_batch.value)))
-            # jax.debug.print('detect nan: {}', jnp.any(jnp.isnan(traj_batch.reward)))
-            # jax.debug.print('detect nan: {}', jnp.any(jnp.isnan(traj_batch.log_prob)))
-            # jax.debug.print('detect nan: {}', jnp.any(jnp.isnan(traj_batch.obs)))
 
             # CALCULATE ADVANTAGE
             train_state, env_state, last_obs, last_done, hstate, rng = runner_state
@@ -264,7 +213,6 @@ def make_train(config):
             )
             _, _, last_val = network.apply(train_state.params, hstate, ac_in)
             last_val = last_val.squeeze(0)
-            # jax.debug.breakpoint()
 
             def _calculate_gae(traj_batch, last_val):
                 def _get_advantages(gae_and_next_value, transition):
@@ -332,16 +280,12 @@ def make_train(config):
                         loss_actor = loss_actor.mean()
                         entropy = pi.entropy().mean()
 
-                        # debug
-                        approx_kl = ((ratio - 1) - logratio).mean()
-                        clip_frac = jnp.mean(jnp.abs(ratio - 1) > config["CLIP_EPS"])
-
                         total_loss = (
                             loss_actor
                             + config["VF_COEF"] * value_loss
                             - config["ENT_COEF"] * entropy
                         )
-                        return total_loss, (value_loss, loss_actor, entropy, ratio, approx_kl, clip_frac)
+                        return total_loss, (value_loss, loss_actor, entropy)
 
                     grad_fn = jax.value_and_grad(_loss_fn, has_aux=True)
                     total_loss, grads = grad_fn(
@@ -398,7 +342,6 @@ def make_train(config):
                 )
                 return update_state, total_loss
 
-            # adding an additional "fake" dimensionality to perform minibatching correctly
             initial_hstate = initial_hstate[None, :]
             update_state = (
                 train_state,
@@ -413,17 +356,12 @@ def make_train(config):
             )
             train_state = update_state[0]
             metric = traj_batch.info
-            ratio_0 = loss_info[1][3].at[0,0].get().mean()
             loss_info = jax.tree.map(lambda x: x.mean(), loss_info)
             metric["loss"] = {
                 "total_loss": loss_info[0],
                 "value_loss": loss_info[1][0],
                 "actor_loss": loss_info[1][1],
                 "entropy": loss_info[1][2],
-                "ratio": loss_info[1][3],
-                "ratio_0": ratio_0,
-                "approx_kl": loss_info[1][4],
-                "clip_frac": loss_info[1][5],
             }
 
             rng = update_state[-1]
@@ -457,16 +395,15 @@ def make_train(config):
             _rng,
         )
         runner_state, metric = jax.lax.scan(
-            _update_step, (runner_state, start_epoch), None, config["NUM_UPDATES"]
+            _update_step, (runner_state, 0), None, config["NUM_UPDATES"]
         )
         return {"runner_state": runner_state, "metric": metric}
 
     return train
 
-
 str_date_time = datetime.now().strftime('%Y-%m-%d-%H-%M')
 config = {
-    "GROUP": "combat_with_missile",
+    "GROUP": "hierarchical_combat",
     "SEED": 42,
     "LR": 3e-4,
     "NUM_ENVS": 200,
@@ -489,20 +426,16 @@ config = {
     "OUTPUTDIR": "results/" + str_date_time,
     "LOGDIR": "results/" + str_date_time + "/logs",
     "SAVEDIR": "results/" + str_date_time + "/checkpoints",
-    # "LOADDIR": "/home/xcy/AeroPlanax/results/2025-01-26-04-39/checkpoints/checkpoint_epoch_1" 
 }
 
 seed = config['SEED']
 wandb.tensorboard.patch(root_logdir=config['LOGDIR'])
 wandb.init(
-    # set the wandb project where this run will be logged
     project="AeroPlanax",
-    # track hyperparameters and run metadata
     config=config,
     name=config['GROUP'] + f'_agent{config["NUM_ACTORS"]}_seed_{seed}',
     group=config['GROUP'],
     notes='hierarchical',
-    # dir=config['LOGDIR'],
     reinit=True,
 )
 
@@ -535,4 +468,4 @@ plt.cla()
 plt.plot(out["metric"]["returned_episode_lengths"].mean(-1).reshape(-1))
 plt.xlabel("Update Step")
 plt.ylabel("Return")
-plt.savefig(output_dir + '/returned_episode_lengths.png')
+plt.savefig(output_dir + '/returned_episode_lengths.png') 

@@ -1,6 +1,6 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-os.environ['XLA_PYTHON_MEM_FRACTION'] = '0.5'
+os.environ['XLA_PYTHON_MEM_FRACTION'] = '0.9'
 
 import jax
 import wandb
@@ -164,7 +164,9 @@ def make_train(config):
 
     def train(rng):
         # INIT NETWORK
-        network = ActorCriticRNN(env.action_space(env.agents[0], env_params).shape[0], config=config)
+        # network = ActorCriticRNN(env.action_space(env.agents[0], env_params).shape[0], config=config)
+        network = ActorCriticRNN(4, config=config)
+
         rng, _rng = jax.random.split(rng)
         init_x = (
             jnp.zeros(
@@ -462,10 +464,10 @@ config = {
     "GROUP": "heading",
     "SEED": 42,
     "LR": 3e-4,
-    "NUM_ENVS": 1000,
+    "NUM_ENVS": 400,
     "NUM_ACTORS": 1,
-    "NUM_STEPS": 3000,
-    "TOTAL_TIMESTEPS": 1e9,
+    "NUM_STEPS": 2500,
+    "TOTAL_TIMESTEPS": 5e8,
     "FC_DIM_SIZE": 128,
     "GRU_HIDDEN_DIM": 128,
     "UPDATE_EPOCHS": 16,
@@ -479,9 +481,9 @@ config = {
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
     "DEBUG": True,
-    "OUTPUTDIR": "results/" + str_date_time,
-    "LOGDIR": "results/" + str_date_time + "/logs",
-    "SAVEDIR": "results/" + str_date_time + "/checkpoints",
+    "OUTPUTDIR": "results/" + "heading" + "_" + str_date_time,
+    "LOGDIR": "results/" + "heading" + "_" + str_date_time + "/logs",
+    "SAVEDIR": "results/" + "heading" + "_" + str_date_time + "/checkpoints",
     # "LOADDIR": "/home/xcy/AeroPlanax/results/2025-01-26-04-39/checkpoints/checkpoint_epoch_1" 
 }
 

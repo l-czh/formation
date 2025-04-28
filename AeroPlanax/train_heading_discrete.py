@@ -516,7 +516,7 @@ config = {
     "OUTPUTDIR": "results/" + str_date_time,
     "LOGDIR": "results/" + str_date_time + "/logs",
     "SAVEDIR": "results/" + str_date_time + "/checkpoints",
-    # "LOADDIR": "/home/xcy/AeroPlanax/results/2025-01-26-04-39/checkpoints/checkpoint_epoch_1" 
+    "LOADDIR": "/home/lczh/formation/formation/results/2025-04-27-23-16/checkpoints/checkpoint_epoch_50" 
 }
 
 seed = config['SEED']

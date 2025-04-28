@@ -1,6 +1,6 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-os.environ['XLA_PYTHON_MEM_FRACTION'] = '0.9'
+os.environ['XLA_PYTHON_MEM_FRACTION'] = '0.95'
 
 import jax
 import wandb
@@ -575,10 +575,10 @@ config = {
     "GROUP": "FormationTask(based on heading + course learning single agent policy)",
     "SEED": 42,
     "LR": 3e-4,
-    "NUM_ENVS": 100,
+    "NUM_ENVS": 1400,
     "NUM_ACTORS": 1,
-    "NUM_STEPS": 2000,
-    "TOTAL_TIMESTEPS": 5e7,
+    "NUM_STEPS": 200,
+    "TOTAL_TIMESTEPS": 1e8,
     "FC_DIM_SIZE": 128,
     "GRU_HIDDEN_DIM": 128,
     "UPDATE_EPOCHS": 16,
@@ -592,10 +592,10 @@ config = {
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
     "DEBUG": True,
-    "OUTPUTDIR": "results/" + str_date_time,
-    "LOGDIR": "results/" + str_date_time + "/logs",
-    "SAVEDIR": "results/" + str_date_time + "/checkpoints",
-    # "LOADDIR": "/home/dqy/NeuralPlanex/AeroPlanex_v/AeroPlanax/results/2025-04-09-10-45/checkpoints/checkpoint_epoch_2111"  # based on heading + course learning policy
+    "OUTPUTDIR": "results/" + "formation_discrete_xcy" + str_date_time,
+    "LOGDIR": "results/" + "formation_discrete_xcy" + str_date_time + "/logs",
+    "SAVEDIR": "results/" + "formation_discrete_xcy" + str_date_time + "/checkpoints",
+    "LOADDIR": "/home/lczh/formation/formation/results/formation_discrete_xcy2025-04-28-14-04/checkpoints/checkpoint_epoch_2499"
 }
 
 seed = config['SEED']

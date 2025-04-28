@@ -18,8 +18,8 @@ import distrax
 import optax
 from envs.wrappers import LogWrapper
 # from envs.aeroplanax_turning_maneuverability_test import AeroPlanax_turning_maneuverability_Env, turning_maneuverability_TaskParams
-# from envs.aeroplanax_formation import AeroPlanaxFormationEnv, FormationTaskParams
-from envs.aeroplanax_formation_test import AeroPlanaxFormationEnv, FormationTaskParams
+from envs.aeroplanax_formation import AeroPlanaxFormationEnv, FormationTaskParams
+# from envs.aeroplanax_formation_test import AeroPlanaxFormationEnv, FormationTaskParams
 import orbax.checkpoint as ocp
 
 
@@ -265,7 +265,7 @@ config = {
     "MAX_GRAD_NORM": 2,
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
-    "LOADDIR": "/home/lczh/formation/formation/results/2025-04-27-17-43/checkpoints/checkpoint_epoch_500"
+    "LOADDIR": "/home/lczh/formation/formation/results/formation_discrete_xcy2025-04-28-09-52/checkpoints/checkpoint_epoch_714"
 }
 if "NUM_UPDATES" not in config:
     config["NUM_UPDATES"] = (
