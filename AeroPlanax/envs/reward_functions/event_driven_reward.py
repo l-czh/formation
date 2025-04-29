@@ -5,8 +5,8 @@ def event_driven_reward_fn(
         state: TEnvState,
         params: TEnvParams,
         agent_id: AgentID,
-        fail_reward: float = -200,
-        success_reward: float = 200
+        fail_reward: float = -1,
+        success_reward: float = 1
     ) -> float:
     """
     Reward is given when the following event happens:
