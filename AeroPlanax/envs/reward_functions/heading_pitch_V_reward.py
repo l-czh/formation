@@ -38,8 +38,6 @@ def heading_pitch_V_reward_fn(
     
     # Combine rewards with geometric mean
     # reward_target = (heading_r * pitch_r * roll_r * speed_r) ** (1 / 4)
-
-        # 示例权重
     w_heading = 0.4
     w_pitch   = 0.3
     w_roll    = 0.1

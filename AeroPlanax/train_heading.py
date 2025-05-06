@@ -123,7 +123,7 @@ def make_train(config):
         config["NUM_ACTORS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
     )
     if "LOADDIR" in config:
-        network = ActorCriticRNN(env.action_space(env.agents[0], env_params).shape[0], config=config)
+        network = ActorCriticRNN(4, config=config)
         rng = jax.random.PRNGKey(42)
         init_x = (
             jnp.zeros(
@@ -467,7 +467,7 @@ config = {
     "NUM_ENVS": 400,
     "NUM_ACTORS": 1,
     "NUM_STEPS": 2500,
-    "TOTAL_TIMESTEPS": 5e8,
+    "TOTAL_TIMESTEPS": 1e8,
     "FC_DIM_SIZE": 128,
     "GRU_HIDDEN_DIM": 128,
     "UPDATE_EPOCHS": 16,
@@ -484,7 +484,7 @@ config = {
     "OUTPUTDIR": "results/" + "heading" + "_" + str_date_time,
     "LOGDIR": "results/" + "heading" + "_" + str_date_time + "/logs",
     "SAVEDIR": "results/" + "heading" + "_" + str_date_time + "/checkpoints",
-    # "LOADDIR": "/home/xcy/AeroPlanax/results/2025-01-26-04-39/checkpoints/checkpoint_epoch_1" 
+    "LOADDIR": "/home/lczh/formation/formation/AeroPlanax/envs/models/heading baseline" 
 }
 
 seed = config['SEED']

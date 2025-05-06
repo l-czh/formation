@@ -61,7 +61,7 @@ class Heading_Pitch_V_TaskParams(EnvParams):
     formation_type: int = 0 # 0: wedge, 1: line, 2: diamond
     sim_freq: int = 50
     agent_interaction_steps: int = 10
-    max_altitude: float = 15000.0
+    max_altitude: float = 20000.0
     min_altitude: float = 2000.0
     max_vt: float = 360.0
     min_vt: float = 120.0
@@ -91,7 +91,7 @@ class AeroPlanaxHeading_Pitch_V_Env(AeroPlanaxEnv[Heading_Pitch_V_TaskState, Hea
         self.reward_functions = [
             functools.partial(heading_pitch_V_reward_fn, reward_scale=1.0),
             functools.partial(altitude_reward_fn, reward_scale=1.0, Kv=0.2),
-            functools.partial(event_driven_reward_fn, fail_reward=-1, success_reward=1),
+            functools.partial(event_driven_reward_fn, fail_reward=-10, success_reward=10),
         ]
 
         self.termination_conditions = [
@@ -162,7 +162,8 @@ class AeroPlanaxHeading_Pitch_V_Env(AeroPlanaxEnv[Heading_Pitch_V_TaskState, Hea
         """Task-specific step transition."""
         # TODO: only fit single agent
         key_heading, key_pitch, key_vt_increment = jax.random.split(key, 3)
-        delta = self.increment_size[state.heading_turn_counts] # 渐进式增量系数
+        # delta = self.increment_size[state.heading_turn_counts] # 渐进式增量系数
+        delta = 0.9
          # 随机航向变化量(-π, π)
         delta_heading = jax.random.uniform(key_heading, shape=(self.num_agents,), minval=-params.max_heading_increment, maxval=params.max_heading_increment)
         

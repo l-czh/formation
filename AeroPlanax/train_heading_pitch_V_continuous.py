@@ -111,6 +111,35 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
     return {a: x[i] for i, a in enumerate(agent_list)}
 
 
+def find_latest_checkpoint(checkpoint_dir):
+    """查找最新的checkpoint文件"""
+    if not os.path.exists(checkpoint_dir):
+        return None
+    checkpoints = [f for f in os.listdir(checkpoint_dir) if f.startswith('checkpoint_epoch_') and not f.endswith('.orbax-checkpoint-tmp-0')]
+    if not checkpoints:
+        return None
+    latest_checkpoint = max(checkpoints, key=lambda x: int(x.split('_')[-1]))
+    return os.path.abspath(os.path.join(checkpoint_dir, latest_checkpoint))
+
+
+def save_checkpoint(train_state, epoch, save_dir):
+    """保存checkpoint"""
+    # 将参数转移到CPU
+    params = jax.device_put(train_state.params, jax.devices('cpu')[0])
+    opt_state = jax.device_put(train_state.opt_state, jax.devices('cpu')[0])
+    
+    checkpoint = {
+        "params": params,
+        "opt_state": opt_state,
+        "epoch": jnp.array(epoch)
+    }
+    checkpoint_path = os.path.abspath(os.path.join(save_dir, f"checkpoint_epoch_{epoch}"))
+    ckptr = ocp.AsyncCheckpointer(ocp.StandardCheckpointHandler())
+    ckptr.save(checkpoint_path, args=ocp.args.StandardSave(checkpoint))
+    ckptr.wait_until_finished()
+    print(f"Checkpoint saved at epoch {epoch}")
+
+
 def make_train(config):
     env_params = Heading_Pitch_V_TaskParams()
     env = AeroPlanaxHeading_Pitch_V_Env(env_params)
@@ -122,39 +151,6 @@ def make_train(config):
     config["MINIBATCH_SIZE"] = (
         config["NUM_ACTORS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
     )
-
-    if "LOADDIR" in config:
-        # network = ActorCriticRNN(env.action_space(env.agents[0], env_params).shape[0], config=config)
-        network = ActorCriticRNN(4, config=config)
-        rng = jax.random.PRNGKey(42)
-        init_x = (
-            jnp.zeros(
-                (1, config["NUM_ENVS"] * config["NUM_ACTORS"], *env.observation_space(env.agents[0], env_params).shape)
-            ),
-            jnp.zeros((1, config["NUM_ENVS"] * config["NUM_ACTORS"])),
-        )
-        init_hstate = ScannedRNN.initialize_carry(config["NUM_ACTORS"] * config["NUM_ENVS"], config["GRU_HIDDEN_DIM"])
-        network_params = network.init(rng, init_hstate, init_x)
-        if config["ANNEAL_LR"]:
-            tx = optax.chain(
-                optax.clip_by_global_norm(config["MAX_GRAD_NORM"]),
-                optax.adam(learning_rate=linear_schedule, eps=1e-5),
-            )
-        else:
-            tx = optax.chain(
-                optax.clip_by_global_norm(config["MAX_GRAD_NORM"]),
-                optax.adam(config["LR"], eps=1e-5),
-            )
-        train_state = TrainState.create(
-            apply_fn=network.apply,
-            params=network_params,
-            tx=tx,
-        )
-        state = {"params": train_state.params, "opt_state": train_state.opt_state, "epoch": jnp.array(0)}
-        ckptr = ocp.AsyncCheckpointer(ocp.StandardCheckpointHandler())
-        checkpoint = ckptr.restore(config['LOADDIR'], args=ocp.args.StandardRestore(item=state))
-    else:
-        checkpoint = None
 
     def linear_schedule(count):
         frac = (
@@ -192,13 +188,27 @@ def make_train(config):
             params=network_params,
             tx=tx,
         )
-        if checkpoint is not None:
-            params = checkpoint["params"]
-            opt_state = checkpoint["opt_state"]
-            train_state = train_state.replace(params=params, opt_state=opt_state)
-            start_epoch = checkpoint["epoch"]
+
+        # 尝试加载最新的checkpoint
+        latest_checkpoint = find_latest_checkpoint(config["SAVEDIR"])
+        if latest_checkpoint:
+            print(f"Loading latest checkpoint from {latest_checkpoint}")
+            ckptr = ocp.AsyncCheckpointer(ocp.StandardCheckpointHandler())
+            checkpoint = ckptr.restore(latest_checkpoint)
+            
+            # 将参数转移到当前设备
+            params = jax.device_put(checkpoint["params"], jax.devices()[0])
+            opt_state = jax.device_put(checkpoint["opt_state"], jax.devices()[0])
+            
+            train_state = train_state.replace(
+                params=params,
+                opt_state=opt_state
+            )
+            start_epoch = int(checkpoint["epoch"])
+            print(f"Resuming training from epoch {start_epoch}")
         else:
             start_epoch = 0
+            print("No checkpoint found, starting new training")
 
         # INIT ENV
         rng, _rng = jax.random.split(rng)
@@ -440,6 +450,15 @@ def make_train(config):
                         metric["heading_turn_counts"][metric["returned_episode"].squeeze()].mean(),
                     ))
                 jax.experimental.io_callback(callback, None, metric)
+
+            # 保存checkpoint
+            def save_checkpoint_callback(update_steps, train_state):
+                if update_steps % config["CHECKPOINT_FREQ"] == 0:
+                    save_checkpoint(train_state, update_steps, config["SAVEDIR"])
+                return None
+
+            jax.experimental.io_callback(save_checkpoint_callback, None, update_steps, train_state)
+
             update_steps = update_steps + 1    
             runner_state = (train_state, env_state, last_obs, last_done, hstate, rng)
             return (runner_state, update_steps), metric
@@ -453,80 +472,112 @@ def make_train(config):
             init_hstate,
             _rng,
         )
+
+        # 计算总更新次数
+        total_updates = config["NUM_UPDATES"] - start_epoch
+        print(f"Starting training with {total_updates} updates from epoch {start_epoch}")
+        
         runner_state, metric = jax.lax.scan(
-            _update_step, (runner_state, start_epoch), None, config["NUM_UPDATES"]
+            _update_step, (runner_state, start_epoch), None, total_updates
         )
         return {"runner_state": runner_state, "metric": metric}
 
     return train
 
 
-str_date_time = datetime.now().strftime('%Y-%m-%d-%H-%M')
-config = {
-    "GROUP": "heading_pitch_V",
-    "SEED": 42,
-    "LR": 3e-4,
-    "NUM_ENVS": 500,
-    "NUM_ACTORS": 1,
-    "NUM_STEPS": 2000,
-    "TOTAL_TIMESTEPS": 1e8,
-    "FC_DIM_SIZE": 128,
-    "GRU_HIDDEN_DIM": 128,
-    "UPDATE_EPOCHS": 16,
-    "NUM_MINIBATCHES": 5,
-    "GAMMA": 0.99,
-    "GAE_LAMBDA": 0.95,
-    "CLIP_EPS": 0.2,
-    "ENT_COEF": 1e-3,
-    "VF_COEF": 1,
-    "MAX_GRAD_NORM": 2,
-    "ACTIVATION": "relu",
-    "ANNEAL_LR": False,
-    "DEBUG": True,
-    "OUTPUTDIR": "results/" + "heading_pitch_V" + "_" + str_date_time,
-    "LOGDIR": "results/" + "heading_pitch_V" + "_" + str_date_time + "/logs",
-    "SAVEDIR": "results/" + "heading_pitch_V" + "_" + str_date_time + "/checkpoints",
-    "LOADDIR": "/home/lczh/formation/formation/results/heading_pitch_V_2025-04-29-15-49/checkpoints/checkpoint_epoch_200" 
-}
+def main():
+    # 训练配置
+    config = {
+        "GROUP": "heading_pitch_V",
+        "SEED": 42,
+        "LR": 3e-4,
+        "NUM_ENVS": 20000,
+        "NUM_ACTORS": 1,
+        "NUM_STEPS": 200,
+        "TOTAL_TIMESTEPS": 1.2e7,
+        "FC_DIM_SIZE": 128,
+        "GRU_HIDDEN_DIM": 128,
+        "UPDATE_EPOCHS": 16,
+        "NUM_MINIBATCHES": 5,
+        "GAMMA": 0.99,
+        "GAE_LAMBDA": 0.95,
+        "CLIP_EPS": 0.2,
+        "ENT_COEF": 1e-3,
+        "VF_COEF": 1,
+        "MAX_GRAD_NORM": 2,
+        "ACTIVATION": "relu",
+        "ANNEAL_LR": False,
+        "DEBUG": True,
+        "CHECKPOINT_FREQ": 100,  # 每100个epoch保存一次checkpoint
+        "OUTPUTDIR": os.path.abspath("results/heading_pitch_V"),  # 使用绝对路径
+        "LOGDIR": os.path.abspath("results/heading_pitch_V/logs"),
+        "SAVEDIR": os.path.abspath("results/heading_pitch_V/checkpoints"),
+        "NUM_TRAINING_ITERATIONS": 5,  # 训练迭代次数
+    }
 
-seed = config['SEED']
-wandb.tensorboard.patch(root_logdir=config['LOGDIR'])
-wandb.init(
-    project="AeroPlanax",
-    config=config,
-    name=config['GROUP'] + f'_agent{config["NUM_ACTORS"]}_seed_{seed}',
-    group=config['GROUP'],
-    notes='multi tasks and new dynamics',
-    reinit=False,
-)
+    # 创建必要的目录
+    Path(config["OUTPUTDIR"]).mkdir(parents=True, exist_ok=True)
+    Path(config["SAVEDIR"]).mkdir(parents=True, exist_ok=True)
+    Path(config["LOGDIR"]).mkdir(parents=True, exist_ok=True)
 
-output_dir = config["OUTPUTDIR"]
-Path(output_dir).mkdir(parents=True, exist_ok=True)
-save_dir = config["SAVEDIR"]
-Path(save_dir).mkdir(parents=True, exist_ok=True)
+    # 初始化wandb
+    seed = config['SEED']
+    wandb.tensorboard.patch(root_logdir=config['LOGDIR'])
+    wandb.init(
+        project="AeroPlanax",
+        config=config,
+        name=config['GROUP'] + f'_agent{config["NUM_ACTORS"]}_seed_{seed}',
+        group=config['GROUP'],
+        notes='continuous training with automatic checkpoint',
+        reinit=False,
+    )
 
-rng = jax.random.PRNGKey(seed)
-train_jit = jax.jit(make_train(config))
-out = train_jit(rng)
-wandb.finish()
+    # 训练循环
+    for iteration in range(config["NUM_TRAINING_ITERATIONS"]):
+        print(f"\nStarting training iteration {iteration + 1}/{config['NUM_TRAINING_ITERATIONS']}")
+        
+        # 查找最新的checkpoint
+        latest_checkpoint = find_latest_checkpoint(config["SAVEDIR"])
+        if latest_checkpoint:
+            print(f"Loading latest checkpoint from {latest_checkpoint}")
+            config["LOADDIR"] = latest_checkpoint
+        else:
+            print("No checkpoint found, starting new training")
+            config["LOADDIR"] = None
 
-ckptr = ocp.AsyncCheckpointer(ocp.StandardCheckpointHandler())
-checkpoint = {
-    "params": out['runner_state'][0][0].params,
-    "opt_state": out['runner_state'][0][0].opt_state,
-    "epoch": jnp.array(out['runner_state'][1])
-}
-checkpoint_path = os.path.abspath(os.path.join(config["SAVEDIR"], f"checkpoint_epoch_{out['runner_state'][1]}"))
-ckptr.save(checkpoint_path, args=ocp.args.StandardSave(checkpoint))
-ckptr.wait_until_finished()
-print(f"Checkpoint saved at epoch {out['runner_state'][1]}")
+        try:
+            # 运行训练
+            rng = jax.random.PRNGKey(seed)
+            train_jit = jax.jit(make_train(config))
+            out = train_jit(rng)
+            
+            # 保存训练结果图表，使用迭代次数作为文件名的一部分
+            plt.plot(out["metric"]["returned_episode_returns"].mean(-1).reshape(-1))
+            plt.xlabel("Update Step")
+            plt.ylabel("Return")
+            plt.savefig(os.path.join(config["OUTPUTDIR"], f'returned_episode_returns_iter_{iteration}.png'))
+            plt.cla()
+            
+            plt.plot(out["metric"]["returned_episode_lengths"].mean(-1).reshape(-1))
+            plt.xlabel("Update Step")
+            plt.ylabel("Episode Length")
+            plt.savefig(os.path.join(config["OUTPUTDIR"], f'returned_episode_lengths_iter_{iteration}.png'))
+            plt.cla()
+            
+            # 更新随机种子
+            config["SEED"] = config["SEED"] + 1
+            print(f"Training iteration {iteration + 1} completed. Starting next iteration with seed {config['SEED']}")
+            
+        except KeyboardInterrupt:
+            print("Training interrupted by user")
+            break
+        except Exception as e:
+            print(f"Training failed with error: {e}")
+            print("Continuing to next iteration...")
+            continue
 
-plt.plot(out["metric"]["returned_episode_returns"].mean(-1).reshape(-1))
-plt.xlabel("Update Step")
-plt.ylabel("Return")
-plt.savefig(output_dir + '/returned_episode_returns.png')
-plt.cla()
-plt.plot(out["metric"]["returned_episode_lengths"].mean(-1).reshape(-1))
-plt.xlabel("Update Step")
-plt.ylabel("Return")
-plt.savefig(output_dir + '/returned_episode_lengths.png') 
+    wandb.finish()
+
+
+if __name__ == "__main__":
+    main() 

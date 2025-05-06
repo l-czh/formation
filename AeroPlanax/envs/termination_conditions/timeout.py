@@ -7,7 +7,7 @@ def timeout_fn(
     state: TEnvState,
     params: TEnvParams,
     agent_id: AgentID,
-    max_steps: int = 200
+    max_steps: int = 50
 ) -> Tuple[bool, bool]:
     """
     Episode terminates if max_step steps have passed.

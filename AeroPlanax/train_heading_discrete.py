@@ -513,10 +513,10 @@ config = {
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
     "DEBUG": True,
-    "OUTPUTDIR": "results/" + str_date_time,
-    "LOGDIR": "results/" + str_date_time + "/logs",
-    "SAVEDIR": "results/" + str_date_time + "/checkpoints",
-    "LOADDIR": "/home/lczh/formation/formation/results/2025-04-27-23-16/checkpoints/checkpoint_epoch_50" 
+    "OUTPUTDIR": "results/" + "heading_discrete" + str_date_time,
+    "LOGDIR": "results/" + "heading_discrete" + str_date_time + "/logs",
+    "SAVEDIR": "results/" + "heading_discrete" + str_date_time + "/checkpoints",
+    "LOADDIR": "/home/lczh/formation/formation/AeroPlanax/envs/models/heading baseline" 
 }
 
 seed = config['SEED']

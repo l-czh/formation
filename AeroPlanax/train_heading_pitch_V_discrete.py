@@ -19,8 +19,7 @@ import distrax
 import tensorboardX
 import jax.experimental
 from envs.wrappers import LogWrapper
-from envs.aeroplanax_heading import AeroPlanaxHeadingEnv, HeadingTaskParams
-from envs.aeroplanax_formation import AeroPlanaxFormationEnv, FormationTaskParams
+from envs.aeroplanax_heading_pitch_V import AeroPlanaxHeading_Pitch_V_Env, Heading_Pitch_V_TaskParams
 import orbax.checkpoint as ocp
 
 
@@ -115,7 +114,6 @@ class Transition(NamedTuple):
 
 def batchify(x: dict, agent_list, num_envs, num_actors):
     x = jnp.stack([x[a] for a in agent_list])
-    # print('batchify', x.shape)
     return x.reshape((num_actors * num_envs, -1))
 
 
@@ -123,9 +121,10 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
     x = x.reshape((num_actors, num_envs, -1))
     return {a: x[i] for i, a in enumerate(agent_list)}
 
+
 def make_train(config):
-    env_params = FormationTaskParams()
-    env = AeroPlanaxFormationEnv(env_params)
+    env_params = Heading_Pitch_V_TaskParams()
+    env = AeroPlanaxHeading_Pitch_V_Env(env_params)
     env = LogWrapper(env)
     config["NUM_ACTORS"] = env.num_agents
     config["NUM_UPDATES"] = (
@@ -134,6 +133,7 @@ def make_train(config):
     config["MINIBATCH_SIZE"] = (
         config["NUM_ACTORS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
     )
+
     if "LOADDIR" in config:
         network = ActorCriticRNN([31, 41, 41, 41], config=config)
         rng = jax.random.PRNGKey(42)
@@ -177,6 +177,7 @@ def make_train(config):
     def train(rng):
         # INIT NETWORK
         network = ActorCriticRNN([31, 41, 41, 41], config=config)
+
         rng, _rng = jax.random.split(rng)
         init_x = (
             jnp.zeros(
@@ -208,6 +209,7 @@ def make_train(config):
             start_epoch = checkpoint["epoch"]
         else:
             start_epoch = 0
+
         # INIT ENV
         rng, _rng = jax.random.split(rng)
         reset_rng = jax.random.split(_rng, config["NUM_ENVS"])
@@ -251,9 +253,9 @@ def make_train(config):
                 log_prob = log_prob_throttle + log_prob_elevator + log_prob_aileron + log_prob_rudder
 
                 action = jnp.concatenate([action_throttle[:, :, np.newaxis], 
-                                          action_elevator[:, :, np.newaxis], 
-                                          action_aileron[:, :, np.newaxis], 
-                                          action_rudder[:, :, np.newaxis]], axis=-1)
+                                        action_elevator[:, :, np.newaxis], 
+                                        action_aileron[:, :, np.newaxis], 
+                                        action_rudder[:, :, np.newaxis]], axis=-1)
 
                 value, action, log_prob = (
                     value.squeeze(0),
@@ -328,7 +330,7 @@ def make_train(config):
                             init_hstate.squeeze(0),
                             (traj_batch.obs, traj_batch.done),
                         )
-                        log_prob  = pi[0].log_prob(traj_batch.action[:, :, 0])
+                        log_prob = pi[0].log_prob(traj_batch.action[:, :, 0])
                         log_prob += pi[1].log_prob(traj_batch.action[:, :, 1])
                         log_prob += pi[2].log_prob(traj_batch.action[:, :, 2])
                         log_prob += pi[3].log_prob(traj_batch.action[:, :, 3])
@@ -461,32 +463,15 @@ def make_train(config):
                     env_steps = metric["update_steps"] * config["NUM_ENVS"] * config["NUM_STEPS"]
                     for k, v in metric["loss"].items():
                         writer.add_scalar('loss/{}'.format(k), v, env_steps)
-                    
-                    # 获取有效的返回 episodes
-                    returned_episode = metric["returned_episode"]
-                    # 先确保数据维度正确匹配再进行索引
-                    ep_returns = metric["returned_episode_returns"][returned_episode]
-                    ep_lengths = metric["returned_episode_lengths"][returned_episode]
-                    
-                    writer.add_scalar('eval/episodic_return', ep_returns.mean(), env_steps)
-                    writer.add_scalar('eval/episodic_length', ep_lengths.mean(), env_steps)
-                    
-                    # 使用适当的索引方式，避免维度不匹配
-                    # 打印数据形状以便调试
-                    print(f"returned_episode shape: {metric['returned_episode'].shape}")
-                    print(f"heading_turn_counts shape: {metric['heading_turn_counts'].shape}")
-                    
-                    # 使用简单的均值来避免索引问题
-                    writer.add_scalar('eval/success_times', metric["heading_turn_counts"].mean(), env_steps)
-                    writer.add_scalar('eval/target_heading_mean', jnp.abs(metric["target_heading"]).mean(), env_steps)
-                    writer.add_scalar('eval/num_crashed', metric["num_crashes"].mean(), env_steps)
-                    
-                    print("EnvStep={:<10} EpisodeLength={:<4.2f} Return={:<4.2f}".format(
-                        env_steps,
-                        ep_lengths.mean(),
-                        ep_returns.mean()
+                    writer.add_scalar('eval/episodic_return', metric["returned_episode_returns"][metric["returned_episode"]].mean(), env_steps)
+                    writer.add_scalar('eval/episodic_length', metric["returned_episode_lengths"][metric["returned_episode"]].mean(), env_steps)
+                    writer.add_scalar('eval/success_times', metric["heading_turn_counts"][metric["returned_episode"].squeeze()].mean(), env_steps)
+                    print("EnvStep={:<10} EpisodeLength={:<4.2f} Return={:<4.2f} SuccessTimes={:.3f}".format(
+                        metric["update_steps"] * config["NUM_ENVS"] * config["NUM_STEPS"],
+                        metric["returned_episode_lengths"][metric["returned_episode"]].mean(),
+                        metric["returned_episode_returns"][metric["returned_episode"]].mean(),
+                        metric["heading_turn_counts"][metric["returned_episode"].squeeze()].mean(),
                     ))
-
                 jax.experimental.io_callback(callback, None, metric)
             update_steps = update_steps + 1    
             runner_state = (train_state, env_state, last_obs, last_done, hstate, rng)
@@ -511,13 +496,13 @@ def make_train(config):
 
 str_date_time = datetime.now().strftime('%Y-%m-%d-%H-%M')
 config = {
-    "GROUP": "FormationTask(based on heading + course learning single agent policy)",
+    "GROUP": "heading_pitch_V_discrete",
     "SEED": 42,
     "LR": 3e-4,
-    "NUM_ENVS": 200,
+    "NUM_ENVS": 1000,
     "NUM_ACTORS": 1,
-    "NUM_STEPS": 1000,
-    "TOTAL_TIMESTEPS": 1e8,
+    "NUM_STEPS": 2000,
+    "TOTAL_TIMESTEPS": 1.6e8,
     "FC_DIM_SIZE": 128,
     "GRU_HIDDEN_DIM": 128,
     "UPDATE_EPOCHS": 16,
@@ -531,23 +516,20 @@ config = {
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
     "DEBUG": True,
-    "OUTPUTDIR": "results/" + str_date_time,
-    "LOGDIR": "results/" + str_date_time + "/logs",
-    "SAVEDIR": "results/" + str_date_time + "/checkpoints",
-    # "LOADDIR": "/home/dqy/NeuralPlanex/AeroPlanex_v/AeroPlanax/results/2025-04-09-10-45/checkpoints/checkpoint_epoch_2111"  # based on heading + course learning policy
+    "OUTPUTDIR": "results/" + "heading_pitch_V_discrete" + "_" + str_date_time,
+    "LOGDIR": "results/" + "heading_pitch_V_discrete" + "_" + str_date_time + "/logs",
+    "SAVEDIR": "results/" + "heading_pitch_V_discrete" + "_" + str_date_time + "/checkpoints",
+    "LOADDIR": "/home/lczh/formation/formation/results/heading_pitch_V_discrete_2025-05-06-21-12/checkpoints/checkpoint_epoch_400" 
 }
 
 seed = config['SEED']
 wandb.tensorboard.patch(root_logdir=config['LOGDIR'])
 wandb.init(
-    # set the wandb project where this run will be logged
     project="AeroPlanax",
-    # track hyperparameters and run metadata
     config=config,
     name=config['GROUP'] + f'_agent{config["NUM_ACTORS"]}_seed_{seed}',
     group=config['GROUP'],
     notes='multi tasks and discrete action',
-    # dir=config['LOGDIR'],
     reinit=True,
 )
 
@@ -580,4 +562,4 @@ plt.cla()
 plt.plot(out["metric"]["returned_episode_lengths"].mean(-1).reshape(-1))
 plt.xlabel("Update Step")
 plt.ylabel("Return")
-plt.savefig(output_dir + '/returned_episode_lengths.png')
+plt.savefig(output_dir + '/returned_episode_lengths.png') 

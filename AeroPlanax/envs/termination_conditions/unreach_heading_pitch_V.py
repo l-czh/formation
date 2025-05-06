@@ -48,6 +48,7 @@ def unreach_heading_pitch_V_fn(
     fail = mask1 & (~mask_heading & ~mask_pitch & ~mask_velocity)
 
     # 如果飞机已经死亡，则任务结束
-    done = ~state.plane_state.is_alive[agent_id] | success | fail
+    # done = ~state.plane_state.is_alive[agent_id]
+    done = False
 
     return done, success 
