@@ -17,7 +17,7 @@ from flax.training.train_state import TrainState
 import distrax
 import optax
 from envs.wrappers import LogWrapper
-from envs.aeroplanax_heading_pitch_V import AeroPlanaxHeading_Pitch_V_Env, Heading_Pitch_V_TaskParams
+from envs.aeroplanax_heading_pitch_V3D import AeroPlanaxHeading_Pitch_V3D_Env, Heading_Pitch_V3D_TaskParams
 import orbax.checkpoint as ocp
 
 
@@ -129,8 +129,8 @@ def test(config, rng):
         )
         return config["LR"] * frac
     # init env
-    env_params = Heading_Pitch_V_TaskParams()
-    env = AeroPlanaxHeading_Pitch_V_Env(env_params)
+    env_params = Heading_Pitch_V3D_TaskParams()
+    env = AeroPlanaxHeading_Pitch_V3D_Env(env_params)
     env = LogWrapper(env)
     config["NUM_ACTORS"] = env.num_agents
 
@@ -139,7 +139,7 @@ def test(config, rng):
     rng = jax.random.PRNGKey(config['SEED'])
     init_x = (
         jnp.zeros(
-            (1, config["NUM_ENVS"] * config["NUM_ACTORS"], *env.observation_space(env.agents[0], env_params).shape)
+            (1, config["NUM_ENVS"] * config["NUM_ACTORS"], 20)
         ),
         jnp.zeros((1, config["NUM_ENVS"] * config["NUM_ACTORS"])),
     )
@@ -264,7 +264,7 @@ config = {
     "MAX_GRAD_NORM": 2,
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
-    "LOADDIR": "/home/lczh/formation/formation/results/heading_pitch_V_discrete_2025-05-07-13-11/checkpoints/checkpoint_epoch_880" 
+    "LOADDIR": "/home/lczh/formation/formation/results/heading_pitch_V3D_discrete_2025-05-07-13-11/checkpoints/checkpoint_epoch_880" 
 }
 rng = jax.random.PRNGKey(42)
 out = test(config, rng) 

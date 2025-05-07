@@ -19,7 +19,7 @@ import distrax
 import tensorboardX
 import jax.experimental
 from envs.wrappers import LogWrapper
-from envs.aeroplanax_heading_pitch_V import AeroPlanaxHeading_Pitch_V_Env, Heading_Pitch_V_TaskParams
+from envs.aeroplanax_heading_pitch_V3D import AeroPlanaxHeading_Pitch_V3D_Env, Heading_Pitch_V3D_TaskParams
 import orbax.checkpoint as ocp
 
 
@@ -123,8 +123,8 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
 
 
 def make_train(config):
-    env_params = Heading_Pitch_V_TaskParams()
-    env = AeroPlanaxHeading_Pitch_V_Env(env_params)
+    env_params = Heading_Pitch_V3D_TaskParams()
+    env = AeroPlanaxHeading_Pitch_V3D_Env(env_params)
     env = LogWrapper(env)
     config["NUM_ACTORS"] = env.num_agents
     config["NUM_UPDATES"] = (
@@ -139,7 +139,7 @@ def make_train(config):
         rng = jax.random.PRNGKey(42)
         init_x = (
             jnp.zeros(
-                (1, config["NUM_ENVS"] * config["NUM_ACTORS"], *env.observation_space(env.agents[0], env_params).shape)
+                (1, config["NUM_ENVS"] * config["NUM_ACTORS"], 20)
             ),
             jnp.zeros((1, config["NUM_ENVS"] * config["NUM_ACTORS"])),
         )
@@ -181,7 +181,7 @@ def make_train(config):
         rng, _rng = jax.random.split(rng)
         init_x = (
             jnp.zeros(
-                (1, config["NUM_ENVS"] * config["NUM_ACTORS"], *env.observation_space(env.agents[0], env_params).shape)
+                (1, config["NUM_ENVS"] * config["NUM_ACTORS"], 20)
             ),
             jnp.zeros((1, config["NUM_ENVS"] * config["NUM_ACTORS"])),
         )
@@ -496,13 +496,13 @@ def make_train(config):
 
 str_date_time = datetime.now().strftime('%Y-%m-%d-%H-%M')
 config = {
-    "GROUP": "heading_pitch_V_discrete",
+    "GROUP": "heading_pitch_V3D_discrete",
     "SEED": 42,
     "LR": 3e-4,
     "NUM_ENVS": 1000,
     "NUM_ACTORS": 1,
     "NUM_STEPS": 2000,
-    "TOTAL_TIMESTEPS": 1.6e8,
+    "TOTAL_TIMESTEPS": 2.0e8,
     "FC_DIM_SIZE": 128,
     "GRU_HIDDEN_DIM": 128,
     "UPDATE_EPOCHS": 16,
@@ -516,10 +516,10 @@ config = {
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
     "DEBUG": True,
-    "OUTPUTDIR": "results/" + "heading_pitch_V_discrete" + "_" + str_date_time,
-    "LOGDIR": "results/" + "heading_pitch_V_discrete" + "_" + str_date_time + "/logs",
-    "SAVEDIR": "results/" + "heading_pitch_V_discrete" + "_" + str_date_time + "/checkpoints",
-    "LOADDIR": "/home/lczh/formation/formation/results/heading_pitch_V_discrete_2025-05-07-12-28/checkpoints/checkpoint_epoch_800" 
+    "OUTPUTDIR": "results/" + "heading_pitch_V3D_discrete" + "_" + str_date_time,
+    "LOGDIR": "results/" + "heading_pitch_V3D_discrete" + "_" + str_date_time + "/logs",
+    "SAVEDIR": "results/" + "heading_pitch_V3D_discrete" + "_" + str_date_time + "/checkpoints",
+    # "LOADDIR": None
 }
 
 seed = config['SEED']
@@ -529,7 +529,7 @@ wandb.init(
     config=config,
     name=config['GROUP'] + f'_agent{config["NUM_ACTORS"]}_seed_{seed}',
     group=config['GROUP'],
-    notes='multi tasks and discrete action',
+    notes='multi tasks and discrete action with 3D velocity',
     reinit=True,
 )
 
@@ -553,13 +553,3 @@ checkpoint_path = os.path.abspath(os.path.join(config["SAVEDIR"], f"checkpoint_e
 ckptr.save(checkpoint_path, args=ocp.args.StandardSave(checkpoint))
 ckptr.wait_until_finished()
 print(f"Checkpoint saved at epoch {out['runner_state'][1]}")
-
-plt.plot(out["metric"]["returned_episode_returns"].mean(-1).reshape(-1))
-plt.xlabel("Update Step")
-plt.ylabel("Return")
-plt.savefig(output_dir + '/returned_episode_returns.png')
-plt.cla()
-plt.plot(out["metric"]["returned_episode_lengths"].mean(-1).reshape(-1))
-plt.xlabel("Update Step")
-plt.ylabel("Return")
-plt.savefig(output_dir + '/returned_episode_lengths.png') 
