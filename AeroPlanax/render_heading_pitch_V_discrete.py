@@ -236,7 +236,7 @@ def test(config, rng):
         init_hstate,
         _rng,
     )
-    for _ in range(200):
+    for _ in range(400):
         test_state, traj_batch = _env_step(test_state)
         env_state = test_state[0].env_state
         success_times = traj_batch.info['heading_turn_counts']
@@ -262,7 +262,7 @@ config = {
     "MAX_GRAD_NORM": 2,
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
-    "LOADDIR": "/home/lczh/formation/formation/results/heading_pitch_V_discrete_2025-05-06-19-49/checkpoints/checkpoint_epoch_260" 
+    "LOADDIR": "/home/lczh/formation/formation/results/heading_pitch_V_discrete_2025-05-06-22-13/checkpoints/checkpoint_epoch_560" 
 }
 rng = jax.random.PRNGKey(42)
 out = test(config, rng) 

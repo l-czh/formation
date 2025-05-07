@@ -31,19 +31,19 @@ def unreach_heading_pitch_V_fn(
 
     # 检查是否达到目标航向角（误差在5度以内）
     delta_heading = wrap_PI(state.plane_state.yaw[agent_id] - state.target_heading[agent_id])
-    mask_heading = jnp.abs(delta_heading) <= jnp.pi / 36  # 5度
+    mask_heading = jnp.abs(delta_heading) <= jnp.pi / 72  # 5度
 
     # 检查是否达到目标俯仰角（误差在5度以内）
     delta_pitch = wrap_PI(state.plane_state.pitch[agent_id] - state.target_pitch[agent_id])
-    mask_pitch = jnp.abs(delta_pitch) <= jnp.pi / 36  # 5度
+    mask_pitch = jnp.abs(delta_pitch) <= jnp.pi / 72  # 5度
 
     # 检查是否达到目标速度（误差在10m/s以内）
     delta_velocity = jnp.abs(state.plane_state.vt[agent_id] - state.target_vt[agent_id])
     mask_velocity = delta_velocity <= 10.0  # 10m/s
 
     # 在满足时间间隔的基础上，只要完成任意一个目标就算成功
-    success = mask1 & (mask_heading | mask_pitch | mask_velocity)
-
+    # success = mask1 & (mask_heading | mask_pitch | mask_velocity)
+    success = mask1 & mask_heading & mask_pitch & mask_velocity
     # 如果达到检查时间但未达到任何目标，则失败
     fail = mask1 & (~mask_heading & ~mask_pitch & ~mask_velocity)
 

@@ -24,10 +24,10 @@ def heading_pitch_V_reward_fn(
     delta_vt = (vt - state.target_vt[agent_id])
     
     # Define error scales for different components
-    heading_error_scale = jnp.pi / 36  # radians (5 degrees)
+    heading_error_scale = jnp.pi / 72  # radians (5 degrees)
     heading_r = jnp.exp(-((delta_heading / heading_error_scale) ** 2))
     
-    pitch_error_scale = jnp.pi / 36  # radians (5 degrees)
+    pitch_error_scale = jnp.pi / 72  # radians (5 degrees)
     pitch_r = jnp.exp(-((delta_pitch / pitch_error_scale) ** 2))
     
     roll_error_scale = 0.35  # radians ~= 20 degrees

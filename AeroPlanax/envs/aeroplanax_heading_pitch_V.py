@@ -91,7 +91,7 @@ class AeroPlanaxHeading_Pitch_V_Env(AeroPlanaxEnv[Heading_Pitch_V_TaskState, Hea
         self.reward_functions = [
             functools.partial(heading_pitch_V_reward_fn, reward_scale=1.0),
             functools.partial(altitude_reward_fn, reward_scale=1.0, Kv=0.2),
-            functools.partial(event_driven_reward_fn, fail_reward=-10, success_reward=10),
+            functools.partial(event_driven_reward_fn, fail_reward=-30, success_reward=30),
         ]
 
         self.termination_conditions = [
@@ -163,7 +163,7 @@ class AeroPlanaxHeading_Pitch_V_Env(AeroPlanaxEnv[Heading_Pitch_V_TaskState, Hea
         # TODO: only fit single agent
         key_heading, key_pitch, key_vt_increment = jax.random.split(key, 3)
         # delta = self.increment_size[state.heading_turn_counts] # 渐进式增量系数
-        delta = 0.9
+        delta = jax.random.uniform(key_heading, shape=(self.num_agents,), minval=0.2, maxval=1.0)
          # 随机航向变化量(-π, π)
         delta_heading = jax.random.uniform(key_heading, shape=(self.num_agents,), minval=-params.max_heading_increment, maxval=params.max_heading_increment)
         

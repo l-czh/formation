@@ -519,7 +519,7 @@ config = {
     "OUTPUTDIR": "results/" + "heading_pitch_V_discrete" + "_" + str_date_time,
     "LOGDIR": "results/" + "heading_pitch_V_discrete" + "_" + str_date_time + "/logs",
     "SAVEDIR": "results/" + "heading_pitch_V_discrete" + "_" + str_date_time + "/checkpoints",
-    "LOADDIR": "/home/lczh/formation/formation/results/heading_pitch_V_discrete_2025-05-06-21-12/checkpoints/checkpoint_epoch_400" 
+    "LOADDIR": "/home/lczh/formation/formation/results/heading_pitch_V_discrete_2025-05-06-22-51/checkpoints/checkpoint_epoch_640" 
 }
 
 seed = config['SEED']
