@@ -15,6 +15,7 @@ from .reward_functions import (
     altitude_reward_fn,
     event_driven_reward_fn,
     heading_pitch_V3D_reward_fn,
+    heading_pitch_v3D_event_reward_fn,
 )
 
 from .termination_conditions import (
@@ -96,6 +97,7 @@ class AeroPlanaxHeading_Pitch_V3D_Env(AeroPlanaxEnv[Heading_Pitch_V3D_TaskState,
             functools.partial(heading_pitch_V3D_reward_fn, reward_scale=1.0),
             functools.partial(altitude_reward_fn, reward_scale=1.0, Kv=0.2),
             functools.partial(event_driven_reward_fn, fail_reward=-50, success_reward=50),
+            functools.partial(heading_pitch_v3D_event_reward_fn),
         ]
 
         self.termination_conditions = [
@@ -176,8 +178,8 @@ class AeroPlanaxHeading_Pitch_V3D_Env(AeroPlanaxEnv[Heading_Pitch_V3D_TaskState,
     ) -> Tuple[Heading_Pitch_V3D_TaskState, Dict[str, Any]]:
         """Task-specific step transition."""
         key_heading, key_pitch, key_vx, key_vy, key_vz = jax.random.split(key, 5)
-        # delta = jax.random.uniform(key_heading, shape=(self.num_agents,), minval=0.2, maxval=1.0)
-        delta = 0.2 # 开始时先用小的变化量，使其首先能稳定飞行
+        delta = jax.random.uniform(key_heading, shape=(self.num_agents,), minval=0.2, maxval=1.0)
+        # delta = 0.6 # 开始时先用小的变化量，使其首先能稳定飞行
         # 随机航向变化量(-π, π)
         delta_heading = jax.random.uniform(key_heading, shape=(self.num_agents,), minval=-params.max_heading_increment, maxval=params.max_heading_increment)
         

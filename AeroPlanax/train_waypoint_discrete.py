@@ -19,7 +19,7 @@ import distrax
 import tensorboardX
 import jax.experimental
 from envs.wrappers import LogWrapper
-from envs.aeroplanax_heading_pitch_V3D import AeroPlanaxHeading_Pitch_V3D_Env, Heading_Pitch_V3D_TaskParams
+from envs.aeroplanax_waypoint import AeroPlanaxWaypointEnv, WaypointTaskParams
 import orbax.checkpoint as ocp
 
 
@@ -123,8 +123,8 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
 
 
 def make_train(config):
-    env_params = Heading_Pitch_V3D_TaskParams()
-    env = AeroPlanaxHeading_Pitch_V3D_Env(env_params)
+    env_params = WaypointTaskParams()
+    env = AeroPlanaxWaypointEnv(env_params)
     env = LogWrapper(env)
     config["NUM_ACTORS"] = env.num_agents
     config["NUM_UPDATES"] = (
@@ -465,13 +465,43 @@ def make_train(config):
                         writer.add_scalar('loss/{}'.format(k), v, env_steps)
                     writer.add_scalar('eval/episodic_return', metric["returned_episode_returns"][metric["returned_episode"]].mean(), env_steps)
                     writer.add_scalar('eval/episodic_length', metric["returned_episode_lengths"][metric["returned_episode"]].mean(), env_steps)
-                    writer.add_scalar('eval/success_times', metric["heading_turn_counts"][metric["returned_episode"].squeeze()].mean(), env_steps)
-                    print("EnvStep={:<10} EpisodeLength={:<4.2f} Return={:<4.2f} SuccessTimes={:.3f}".format(
-                        metric["update_steps"] * config["NUM_ENVS"] * config["NUM_STEPS"],
-                        metric["returned_episode_lengths"][metric["returned_episode"]].mean(),
-                        metric["returned_episode_returns"][metric["returned_episode"]].mean(),
-                        metric["heading_turn_counts"][metric["returned_episode"].squeeze()].mean(),
-                    ))
+                    
+                    # Safely extract waypoint metrics
+                    try:
+                        if "waypoint_count" in metric:
+                            # For scalar case
+                            if metric["waypoint_count"].ndim == 0:
+                                waypoint_count = float(metric["waypoint_count"])
+                            # For array case
+                            else:
+                                waypoint_count = float(metric["waypoint_count"][metric["returned_episode"].squeeze()].mean())
+                            writer.add_scalar('eval/waypoint_count', waypoint_count, env_steps)
+                        
+                        if "distance_to_waypoint" in metric:
+                            # For scalar case
+                            if metric["distance_to_waypoint"].ndim == 0:
+                                distance = float(metric["distance_to_waypoint"])
+                            # For array case
+                            else:
+                                distance = float(metric["distance_to_waypoint"][metric["returned_episode"].squeeze()].mean())
+                            writer.add_scalar('eval/distance_to_waypoint', distance, env_steps)
+                            
+                        print("EnvStep={:<10} EpisodeLength={:<4.2f} Return={:<4.2f} WaypointCount={:.3f} Distance={:.3f}".format(
+                            metric["update_steps"] * config["NUM_ENVS"] * config["NUM_STEPS"],
+                            metric["returned_episode_lengths"][metric["returned_episode"]].mean(),
+                            metric["returned_episode_returns"][metric["returned_episode"]].mean(),
+                            waypoint_count,
+                            distance
+                        ))
+                    except (KeyError, ValueError, IndexError) as e:
+                        # Fallback print without waypoint metrics if there's an error
+                        print("EnvStep={:<10} EpisodeLength={:<4.2f} Return={:<4.2f}".format(
+                            metric["update_steps"] * config["NUM_ENVS"] * config["NUM_STEPS"],
+                            metric["returned_episode_lengths"][metric["returned_episode"]].mean(),
+                            metric["returned_episode_returns"][metric["returned_episode"]].mean()
+                        ))
+                        print(f"Warning: Error accessing waypoint metrics: {e}")
+                        
                 jax.experimental.io_callback(callback, None, metric)
             update_steps = update_steps + 1    
             runner_state = (train_state, env_state, last_obs, last_done, hstate, rng)
@@ -496,7 +526,7 @@ def make_train(config):
 
 str_date_time = datetime.now().strftime('%Y-%m-%d-%H-%M')
 config = {
-    "GROUP": "heading_pitch_V3D_discrete",
+    "GROUP": "waypoint_discrete",
     "SEED": 42,
     "LR": 3e-4,
     "NUM_ENVS": 1000,
@@ -516,10 +546,11 @@ config = {
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
     "DEBUG": True,
-    "OUTPUTDIR": "results/" + "heading_pitch_V3D_discrete" + "_" + str_date_time,
-    "LOGDIR": "results/" + "heading_pitch_V3D_discrete" + "_" + str_date_time + "/logs",
-    "SAVEDIR": "results/" + "heading_pitch_V3D_discrete" + "_" + str_date_time + "/checkpoints",
-    "LOADDIR": "/home/lczh/formation/formation/results/heading_pitch_V3D_discrete_2025-05-08-16-40/checkpoints/checkpoint_epoch_500"
+    "OUTPUTDIR": "results/" + "waypoint_discrete" + "_" + str_date_time,
+    "LOGDIR": "results/" + "waypoint_discrete" + "_" + str_date_time + "/logs",
+    "SAVEDIR": "results/" + "waypoint_discrete" + "_" + str_date_time + "/checkpoints",
+    # If you want to load from a previous checkpoint, uncomment the following line:
+    "LOADDIR": "/home/lczh/formation/formation/results/waypoint_discrete_2025-05-09-15-11/checkpoints/checkpoint_epoch_200"
 }
 
 seed = config['SEED']
@@ -529,7 +560,7 @@ wandb.init(
     config=config,
     name=config['GROUP'] + f'_agent{config["NUM_ACTORS"]}_seed_{seed}',
     group=config['GROUP'],
-    notes='multi tasks and discrete action with 3D velocity',
+    notes='waypoint navigation task with discrete action',
     reinit=True,
 )
 
@@ -552,4 +583,4 @@ checkpoint = {
 checkpoint_path = os.path.abspath(os.path.join(config["SAVEDIR"], f"checkpoint_epoch_{out['runner_state'][1]}"))
 ckptr.save(checkpoint_path, args=ocp.args.StandardSave(checkpoint))
 ckptr.wait_until_finished()
-print(f"Checkpoint saved at epoch {out['runner_state'][1]}")
+print(f"Checkpoint saved at epoch {out['runner_state'][1]}") 

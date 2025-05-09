@@ -8,3 +8,5 @@ from .turn_count_reward import turn_count_reward_fn
 from .crash_penalty_reward import crash_penalty_fn
 from .heading_pitch_V_reward import heading_pitch_V_reward_fn
 from .heading_pitch_V3D_reward import heading_pitch_V3D_reward_fn
+from .heading_pitch_v3D_event_reward import heading_pitch_v3D_event_reward_fn
+from .waypoint_reward import waypoint_reward_fn

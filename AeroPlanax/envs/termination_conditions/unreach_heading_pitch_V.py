@@ -1,10 +1,8 @@
 from typing import Tuple
 from ..aeroplanax import TEnvState, TEnvParams, AgentID
 from ..core.simulators.fighterplane.dynamics import FighterPlaneState
-
 import jax.numpy as jnp
 from ..utils.utils import wrap_PI
-import jax
 
 
 def unreach_heading_pitch_V_fn(

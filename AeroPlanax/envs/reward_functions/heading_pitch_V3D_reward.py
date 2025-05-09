@@ -8,7 +8,8 @@ def heading_pitch_V3D_reward_fn(
         state: TEnvState,
         params: TEnvParams,
         agent_id: AgentID,
-        reward_scale: float = 1.0
+        reward_scale: float = 1.0,
+        time_penalty: float = 0.2   # 每步惩罚 0.2
     ) -> float:
     """
     Measure the difference between current and target values for heading, pitch and velocity vector
@@ -60,4 +61,4 @@ def heading_pitch_V3D_reward_fn(
     # Apply mask for alive/locked state
     mask = state.plane_state.is_alive[agent_id] | state.plane_state.is_locked[agent_id]
     
-    return reward_target * reward_scale * mask 
+    return (reward_target - time_penalty) * reward_scale * mask 
