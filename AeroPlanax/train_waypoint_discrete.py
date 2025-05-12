@@ -532,7 +532,7 @@ config = {
     "NUM_ENVS": 1000,
     "NUM_ACTORS": 1,
     "NUM_STEPS": 2000,
-    "TOTAL_TIMESTEPS": 2.0e8,
+    "TOTAL_TIMESTEPS": 1.6e8,
     "FC_DIM_SIZE": 128,
     "GRU_HIDDEN_DIM": 128,
     "UPDATE_EPOCHS": 16,
@@ -542,15 +542,14 @@ config = {
     "CLIP_EPS": 0.2,
     "ENT_COEF": 1e-3,
     "VF_COEF": 1,
-    "MAX_GRAD_NORM": 1.0,
+    "MAX_GRAD_NORM": 2.0,
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
     "DEBUG": True,
     "OUTPUTDIR": "results/" + "waypoint_discrete" + "_" + str_date_time,
     "LOGDIR": "results/" + "waypoint_discrete" + "_" + str_date_time + "/logs",
     "SAVEDIR": "results/" + "waypoint_discrete" + "_" + str_date_time + "/checkpoints",
-    # If you want to load from a previous checkpoint, uncomment the following line:
-    "LOADDIR": "/home/lczh/formation/formation/results/waypoint_discrete_2025-05-09-15-11/checkpoints/checkpoint_epoch_200"
+    "LOADDIR": "/home/lczh/formation/formation/results/waypoint_discrete_2025-05-10-01-00/checkpoints/checkpoint_epoch_8007"
 }
 
 seed = config['SEED']

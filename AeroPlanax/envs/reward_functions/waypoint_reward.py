@@ -68,10 +68,10 @@ def waypoint_reward_fn(
     # Negative reward if the aircraft is moving away from the waypoint
     distance_reward = jnp.where(
         distance_change > 0,
-        # Getting closer to waypoint - positive reward
-        approach_reward * distance_change,
-        # Moving away from waypoint - negative reward
-        distance_penalty * distance_change
+        # Getting closer to waypoint - positive reward that increases as we get closer
+        approach_reward * distance_change * (1.0 + params.waypoint_radius / (current_distance + 1e-6)),
+        # Moving away from waypoint - negative reward that increases as we get further
+        distance_penalty * distance_change * (1.0 + current_distance / params.max_waypoint_distance)
     )
     
     # Bonus reward for being very close to the waypoint

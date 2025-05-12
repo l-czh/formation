@@ -69,7 +69,7 @@ class WaypointTaskParams(EnvParams):
     min_waypoint_distance: float = 500.0  # Minimum distance to generate waypoint (m)
     max_waypoint_distance: float = 3000.0  # Maximum distance to generate waypoint (m)
     max_altitude_difference: float = 300.0  # Maximum altitude difference for waypoints (m)
-    waypoint_radius: float = 100.0  # Radius within which a waypoint is considered reached (m)
+    waypoint_radius: float = 200.0  # Radius within which a waypoint is considered reached (m)
     waypoint_timeout: int = 200  # Maximum time steps to reach a waypoint before generating a new one
     safe_altitude: float = 4.0
     danger_altitude: float = 3.5
