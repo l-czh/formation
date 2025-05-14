@@ -63,6 +63,8 @@ class ActorCriticRNN(nn.Module):
         else:
             activation = nn.tanh
         obs, dones = x
+        
+        # Actor network (decentralized)
         embedding = nn.Dense(
             self.config["FC_DIM_SIZE"], kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
         )(obs)
@@ -70,6 +72,12 @@ class ActorCriticRNN(nn.Module):
 
         rnn_in = (embedding, dones)
         hidden, embedding = ScannedRNN()(hidden, rnn_in)
+
+        # add a dense layer to the embedding
+        embedding = nn.Dense(
+            self.config["FC_DIM_SIZE"]*2, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+        )(embedding)
+        embedding = activation(embedding)
 
         actor_mean = nn.Dense(
             self.config["GRU_HIDDEN_DIM"], kernel_init=orthogonal(2), bias_init=constant(0.0)
@@ -92,9 +100,27 @@ class ActorCriticRNN(nn.Module):
         pi_aileron = distrax.Categorical(logits=actor_aileron_mean)
         pi_rudder = distrax.Categorical(logits=actor_rudder_mean)
 
+        # Critic network (centralized)
+        # Reshape obs to include all agents' observations
+        global_obs = obs.reshape(-1, self.config["NUM_ACTORS"], obs.shape[-1])
+        
+        # Process each agent's observation through a shared network
+        agent_embeddings = nn.Dense(
+            self.config["FC_DIM_SIZE"], kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+        )(global_obs)
+        agent_embeddings = activation(agent_embeddings)
+        
+        # Aggregate agent embeddings using attention mechanism
+        attention_weights = nn.Dense(
+            1, kernel_init=orthogonal(1.0), bias_init=constant(0.0)
+        )(agent_embeddings)
+        attention_weights = jax.nn.softmax(attention_weights, axis=1)
+        global_embedding = jnp.sum(attention_weights * agent_embeddings, axis=1)
+        
+        # Process global embedding through critic network
         critic = nn.Dense(
             self.config["FC_DIM_SIZE"], kernel_init=orthogonal(2), bias_init=constant(0.0)
-        )(embedding)
+        )(global_embedding)
         critic = activation(critic)
         critic = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0))(
             critic
@@ -514,10 +540,10 @@ config = {
     "GROUP": "FormationTask(based on heading + course learning single agent policy)",
     "SEED": 42,
     "LR": 3e-4,
-    "NUM_ENVS": 200,
+    "NUM_ENVS": 1000,
     "NUM_ACTORS": 1,
-    "NUM_STEPS": 1000,
-    "TOTAL_TIMESTEPS": 1e8,
+    "NUM_STEPS": 500,
+    "TOTAL_TIMESTEPS": 5e7,
     "FC_DIM_SIZE": 128,
     "GRU_HIDDEN_DIM": 128,
     "UPDATE_EPOCHS": 16,
@@ -531,10 +557,10 @@ config = {
     "ACTIVATION": "relu",
     "ANNEAL_LR": False,
     "DEBUG": True,
-    "OUTPUTDIR": "results/" + str_date_time,
-    "LOGDIR": "results/" + str_date_time + "/logs",
-    "SAVEDIR": "results/" + str_date_time + "/checkpoints",
-    # "LOADDIR": "/home/dqy/NeuralPlanex/AeroPlanex_v/AeroPlanax/results/2025-04-09-10-45/checkpoints/checkpoint_epoch_2111"  # based on heading + course learning policy
+    "OUTPUTDIR": "results/" + "formation" + str_date_time,
+    "LOGDIR": "results/" + "formation" + str_date_time + "/logs",
+    "SAVEDIR": "results/" + "formation" + str_date_time + "/checkpoints",
+    "LOADDIR": "/home/lczh/formation/formation/results/formation2025-05-13-23-14/checkpoints/checkpoint_epoch_700"  # based on heading + course learning policy
 }
 
 seed = config['SEED']

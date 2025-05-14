@@ -516,7 +516,7 @@ config = {
     "OUTPUTDIR": "results/" + "heading_discrete" + str_date_time,
     "LOGDIR": "results/" + "heading_discrete" + str_date_time + "/logs",
     "SAVEDIR": "results/" + "heading_discrete" + str_date_time + "/checkpoints",
-    "LOADDIR": "/home/lczh/formation/formation/AeroPlanax/envs/models/heading baseline" 
+    # "LOADDIR": "/home/lczh/formation/formation/AeroPlanax/envs/models/heading baseline" 
 }
 
 seed = config['SEED']

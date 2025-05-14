@@ -5,7 +5,6 @@ from datetime import datetime
 from pathlib import Path
 from flax import struct
 import jax
-from jax.typing import ArrayLike
 from jax import lax
 import jax.numpy as jnp
 from gymnax.environments import environment
@@ -22,7 +21,7 @@ class EnvState:
     missile_state: BaseMissileState
     control_state: BaseControlState
     # task state
-    pre_rewards: ArrayLike
+    
     done: bool
     success: bool
     time: int
@@ -76,8 +75,6 @@ class AeroPlanaxEnv(Generic[TEnvState, TEnvParams]):
         self.agent_interaction_steps = env_params.agent_interaction_steps
 
         self.reward_functions: List[Callable[[TEnvState, TEnvParams, AgentID], float]] = []
-        self.is_potential: List[bool] = []
-
         self.termination_conditions: List[Callable[[TEnvState, TEnvParams, AgentID], Tuple[bool, bool]]] = []
 
         self.create_records = False
@@ -164,7 +161,6 @@ class AeroPlanaxEnv(Generic[TEnvState, TEnvParams]):
         init_state = self._init_state(key, params)
         state = self._reset_task(key, init_state, params)
         obs = self._get_obs(state, params)
-        state, _ = self.get_reward(state, params)
         return obs, state
 
     @functools.partial(jax.jit, static_argnums=(0,))
@@ -175,6 +171,22 @@ class AeroPlanaxEnv(Generic[TEnvState, TEnvParams]):
         actions: Dict[AgentName, chex.Array],
         params: Optional[TEnvParams] = None,
     ) -> Tuple[Dict[AgentName, chex.Array], TEnvState, Dict[AgentName, float], Dict[AgentName, bool], Dict[str, Any]]:
+        """
+        在环境中执行步长过渡。如果完成，则重置环境。
+        Args:
+            key (chex.PRNGKey): 伪随机数生成器的键。
+            state (TEnvState): 环境的状态。
+            actions (Dict[AgentName, chex.Array]): 智能体的动作字典。
+            params (Optional[TEnvParams], optional): 环境参数，默认为 None。如果为 None，则使用默认参数。默认为 None。
+        Returns:
+            Tuple[Dict[AgentName, chex.Array], TEnvState, Dict[AgentName, float], Dict[AgentName, bool], Dict[str, Any]]:
+                包含以下内容的元组：
+                - obs (Dict[AgentName, chex.Array]): 智能体的观察值字典。
+                - state (TEnvState): 更新后的环境状态。
+                - rewards (Dict[AgentName, float]): 智能体的奖励值字典。
+                - dones (Dict[AgentName, bool]): 智能体的终止标志字典。
+                - info (Dict[str, Any]): 包含额外调试信息的字典。
+        """
         """Performs step transitions in the environment. Resets the environment if done."""
         if params is None:
             params = self.default_params
@@ -183,11 +195,8 @@ class AeroPlanaxEnv(Generic[TEnvState, TEnvParams]):
             # 通用状态更新逻辑
             def update_plane_status(plane_states, crashed, shotdown, locked):
                 plane_alive = plane_states.is_alive | plane_states.is_locked
-                # NOTE: 解除锁定
                 plane_states = plane_states.replace(
-                    status=jnp.where(plane_alive, 
-                                    jnp.where(locked, 1, 0),
-                                    plane_states.status)
+                    status=jnp.where(jnp.logical_and(locked, plane_alive), 1, plane_states.status)
                 )
                 plane_states = plane_states.replace(
                     status=jnp.where(jnp.logical_and(crashed, plane_alive), 2, plane_states.status)
@@ -298,9 +307,19 @@ class AeroPlanaxEnv(Generic[TEnvState, TEnvParams]):
         obs_st = self._get_obs(state_st, params)
 
         state_st, dones = self.get_termination(state_st, params)
-        dones["__all__"] = state_st.done
-        state_st, rewards = self.get_reward(state_st, params)
+        dones["__all__"] = state_st.done # 将state_st.done（环境级别的全局终止标志）存入字典的特殊键__all__，这个标志表示整个环境是否需要重置（例如所有飞机都终止/任务超时）
+        rewards = self.get_reward(state_st, params) # 调用get_reward方法，根据当前状态计算每个智能体的即时奖励，奖励可能来自多个奖励函数的组合（如存活奖励、击中奖励等），返回字典类型，包含每个智能体的奖励值（如 {"ally_0": 1.5, "enemy_0": -0.5}）
         info = {"success": state_st.success}
+        # 创建包含额外调试信息的字典info
+        # state_st.success表示任务是否成功完成（不同于done，可能用于判断胜利条件）
+        # 这个信息字典通常用于训练监控或日志记录
+
+        # # 调试输出：打印环境步状态
+        # jax.debug.print("aeroplanax.py: EnvStep Debug: time={time}, rewards={rewards}, done_all={done_all}, success={success}",
+        #                 time=state_st.time,
+        #                 rewards=rewards,
+        #                 done_all=dones["__all__"],
+        #                 success=info["success"])
 
         key, key_step = jax.random.split(key)
         state_st, info = self._step_task(key_step, state_st, info, actions, params)
@@ -350,7 +369,6 @@ class AeroPlanaxEnv(Generic[TEnvState, TEnvParams]):
             plane_state=aeroplane_state,
             missile_state=missile_state,
             control_state=aeroplane_control_state,
-            pre_rewards=jnp.zeros((len(self.reward_functions), self.num_agents)),
             done=False,
             success=False,
             time=0
@@ -454,7 +472,7 @@ class AeroPlanaxEnv(Generic[TEnvState, TEnvParams]):
         self,
         state: TEnvState,
         params: TEnvParams,
-    ) -> Tuple[TEnvState, Dict[AgentName, float]]:
+    ) -> Dict[AgentName, float]:
         """
         Aggregate reward functions.
 
@@ -466,20 +484,14 @@ class AeroPlanaxEnv(Generic[TEnvState, TEnvParams]):
             Dict[AgentName, float]: agents' rewards.
         """
         rewards = jnp.zeros(self.num_agents)
-        pre_rewards = jnp.zeros_like(state.pre_rewards)
-        for i in range(len(self.reward_functions)):
-            reward_function = self.reward_functions[i]
-            reward = jax.vmap(
+        for reward_function in self.reward_functions:
+            rewards += jax.vmap(
                 reward_function, in_axes=(None, None, 0)
             )(state, params, jnp.arange(self.num_agents))
-            if self.is_potential[i]:
-                reward, pre_rewards = reward - state.pre_rewards[i], pre_rewards.at[i].set(reward)
-            rewards += reward
         rewards = {
             agent: rewards[i] for i, agent in enumerate(self.agents)
         }
-        state = state.replace(pre_rewards=pre_rewards)
-        return state, rewards
+        return rewards
 
     @functools.partial(jax.jit, static_argnums=(0,))
     def get_termination(
@@ -488,40 +500,42 @@ class AeroPlanaxEnv(Generic[TEnvState, TEnvParams]):
         params: TEnvParams,
     ) -> Tuple[TEnvState, Dict[AgentName, bool]]:
         """
-        Aggregate termination conditions.
+        聚合终止条件。
 
         Args:
-            state (TEnvState): current environment state
-            params (TEnvParams): current environment parameters
+            state (TEnvState): 当前环境状态
+            params (TEnvParams): 当前环境参数
 
         Returns:
-            Tuple[TEnvState, Dict[AgentName, bool]]: updated environment state
-            and agents' termination flags.
+            Tuple[TEnvState, Dict[AgentName, bool]]: 更新后的环境状态
+            和代理的终止标志。
         """
+        # 初始化所有代理的终止标志为False
         dones = jnp.zeros(self.num_agents, dtype=jnp.bool_)
         successes = jnp.zeros(self.num_agents, dtype=jnp.bool_)
         for termination_condition in self.termination_conditions:
+            # 对每个终止条件，应用vmap函数并行处理所有代理
             new_done, new_success = jax.vmap(
                 termination_condition, in_axes=(None, None, 0)
             )(state, params, jnp.arange(self.num_agents))
-            dones = jnp.logical_or(dones, new_done)
+            # 更新终止标志
+            dones = jnp.logical_or(dones, new_done) 
             successes = jnp.logical_or(successes, new_success)
-            # TODO: early stop when all agents are done
-        # modify state
-        '''
-        TODO: 或许应该废除
-        (1) success目前暂时(似乎)没有得到使用
-        (2) 多机环境中单架飞机的state设置为success不是很好的选择(Locked+Alive已经很烦人了)
-        '''
-        # state = state.replace(
-        #     plane_state=state.plane_state.replace(
-        #         status=jnp.where(successes, 4, state.plane_state.status)
-        #     )
-        # )
+            # TODO: 当所有代理都完成时提前停止
+        # 修改状态
+        # 更新飞机的状态
         state = state.replace(
-            done=jnp.all(dones),
-            success=jnp.all(successes)
+            plane_state=state.plane_state.replace(
+                # 如果代理成功，则飞机的状态设置为4，否则保持不变
+                status=jnp.where(successes, 4, state.plane_state.status)
+            )
         )
+        # 更新环境的done和success标志
+        state = state.replace(
+            done=jnp.all(dones),  # 当所有代理都完成时，done为True
+            success=jnp.all(successes)  # 当所有代理都成功时，success为True
+        )
+        # 将终止标志转换为字典形式，方便后续处理
         dones = {
             agent: dones[i] for i, agent in enumerate(self.agents)
         }
